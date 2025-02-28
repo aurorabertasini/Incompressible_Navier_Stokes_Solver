@@ -1,59 +1,116 @@
-#ifndef UNCOUPLED_NAVIER_STOKES_HPP
-#define UNCOUPLED_NAVIER_STOKES_HPP
+#ifndef UNCOUPLEDNAVIERSTOKES_HPP
+#define UNCOUPLEDNAVIERSTOKES_HPP
 
 #include "includes_file.hpp"
 
 using namespace dealii;
 
-// ==================================================================
-// Class: UncoupledNavierStokes
-//
-// Description:
-//   This class solves the incompressible Navier-Stokes equations
-//   using an uncoupled approach. The class is templated on the
-//   dimensionality of the problem in order to handle 2D and 3D
-//   problems.
-//
-//  =================================================================
-
 template <unsigned int dim>
 class UncoupledNavierStokes
 {
-
 public:
-    // ---------------------------------------------------------------
-    // Class: InletVelocity
-    //
-    // Description:
-    //   This class defines an inlet velocity function.
-    //   It sets the maximum velocity value (uM) based on the
-    //   dimensionality of the problem: 1.5 for 2D problems, 2.25 for 3D problems.
-    //
-    // Parameters:
-    //   H - characteristic length of the domain.
-    //   uM - maximum velocity value.
-    // ---------------------------------------------------------------
-    class InletVelocity : public Function<dim>
+    class ForcingTerm2D : public Function<dim>
     {
     public:
-        InletVelocity(const double H)
-            : Function<dim>(dim)
+        virtual void
+        vector_value(const Point<dim> &p,
+                     Vector<double> &values) const override
         {
-            this->H = H;
-            if constexpr (dim == 2)
-                this->uM = 1.5;
-            else
-                this->uM = 2.25;
+            double x = p[0];
+            double y = p[1];
+            double t = this->get_time();
+            values[0] = M_PI * (4.0 * M_PI * M_PI * pow(sin(t), 2) * pow(sin(M_PI * x), 3) * sin(M_PI * y) * cos(M_PI * x) + 16.0 * M_PI * M_PI * sin(t) * pow(sin(M_PI * x), 2) * cos(M_PI * y) - sin(t) * sin(M_PI * x) - 4.0 * M_PI * M_PI * sin(t) * cos(M_PI * y) + 2.0 * pow(sin(M_PI * x), 2) * cos(t) * cos(M_PI * y)) * sin(M_PI * y);
+
+            values[1] = M_PI * (4.0 * M_PI * M_PI * pow(sin(t), 2) * pow(sin(M_PI * x), 2) * pow(sin(M_PI * y), 3) * cos(M_PI * y) - 16.0 * M_PI * M_PI * sin(t) * sin(M_PI * x) * pow(sin(M_PI * y), 2) * cos(M_PI * x) + 4.0 * M_PI * M_PI * sin(t) * sin(M_PI * x) * cos(M_PI * x) + sin(t) * cos(M_PI * x) * cos(M_PI * y) - 2.0 * sin(M_PI * x) * pow(sin(M_PI * y), 2) * cos(t) * cos(M_PI * x));
         }
 
+        virtual double
+        value(const Point<dim> &p,
+              const unsigned int component = 0) const override
+        {
+            double x = p[0];
+            double y = p[1];
+            double t = this->get_time();
+            if (component == 0)
+                return M_PI * (4.0 * M_PI * M_PI * pow(sin(t), 2) * pow(sin(M_PI * x), 3) * sin(M_PI * y) * cos(M_PI * x) + 16.0 * M_PI * M_PI * sin(t) * pow(sin(M_PI * x), 2) * cos(M_PI * y) - sin(t) * sin(M_PI * x) - 4.0 * M_PI * M_PI * sin(t) * cos(M_PI * y) + 2.0 * pow(sin(M_PI * x), 2) * cos(t) * cos(M_PI * y)) * sin(M_PI * y);
+            else if (component == 1)
+                return M_PI * (4.0 * M_PI * M_PI * pow(sin(t), 2) * pow(sin(M_PI * x), 2) * pow(sin(M_PI * y), 3) * cos(M_PI * y) - 16.0 * M_PI * M_PI * sin(t) * sin(M_PI * x) * pow(sin(M_PI * y), 2) * cos(M_PI * x) + 4.0 * M_PI * M_PI * sin(t) * sin(M_PI * x) * cos(M_PI * x) + sin(t) * cos(M_PI * x) * cos(M_PI * y) - 2.0 * sin(M_PI * x) * pow(sin(M_PI * y), 2) * cos(t) * cos(M_PI * x));
+            else
+                return 0.0;
+        }
+
+    protected:
+    };
+
+    class ExactVelocity2D : public Function<dim>
+    {
+    public:
         virtual void
         vector_value(const Point<dim> &p, Vector<double> &values) const override
         {
-            if constexpr (dim == 2)
-                values[0] = 4.0 * uM * p[1] * (H - p[1]) / (H * H);
+            double t = this->get_time();
+            // u_x = sp.pi * sp.sin(t) * sp.sin(2 * sp.pi * y) * sp.sin(sp.pi * x)**2
+            values[0] = M_PI * sin(t) * sin(2.0 * M_PI * p[1]) * pow(sin(M_PI * p[0]), 2);
+
+            // u_y = -sp.pi * sp.sin(t) * sp.sin(2 * sp.pi * x) * sp.sin(sp.pi * y)**2
+            values[1] = -M_PI * sin(t) * sin(2.0 * M_PI * p[0]) * pow(sin(M_PI * p[1]), 2);
+        }
+
+        virtual double
+        value(const Point<dim> &p, const unsigned int component = 0) const override
+        {
+            double t = this->get_time();
+            if (component == 0)
+                return M_PI * sin(t) * sin(2.0 * M_PI * p[1]) * pow(sin(M_PI * p[0]), 2);
+
+            else if (component == 1)
+                return -M_PI * sin(t) * sin(2.0 * M_PI * p[0]) * pow(sin(M_PI * p[1]), 2);
             else
-                values[0] = 16.0 * uM * p[1] * (H - p[1]) * p[2] * (H - p[2]) / (H * H * H * H);
-            for (unsigned int i = 1; i < dim; ++i)
+                return 0.0;
+        }
+
+        virtual Tensor<1, dim>
+        gradient(
+            const Point<dim> &p, const unsigned int component) const
+        {
+            Tensor<1, dim> result;
+            double t = this->get_time();
+            double x = p[0];
+            double y = p[1];
+
+            if (component == 0)
+            {
+                result[0] = 2.0 * M_PI * M_PI * sin(t) * sin(2.0 * M_PI * y) * sin(M_PI * x) * cos(M_PI * x);
+                result[1] = 2.0 * M_PI * M_PI * sin(t) * cos(2.0 * M_PI * y) * pow(sin(M_PI * x), 2);
+            }
+            else if (component == 1)
+            {
+                result[0] = -2.0 * M_PI * M_PI * sin(t) * cos(2.0 * M_PI * x) * pow(sin(M_PI * y), 2);
+                result[1] = -2.0 * M_PI * M_PI * sin(t) * sin(2.0 * M_PI * x) * sin(M_PI * y) * cos(M_PI * y);
+            }
+            return result;
+        }
+        virtual void vector_gradient(
+            const Point<dim> &p, std::vector<Tensor<1, dim>> &values) const
+        {
+            for (unsigned int i = 0; i < dim; i++)
+            {
+                values[i] = gradient(p, i);
+            }
+        }
+    };
+
+    class ExactPressure2D : public Function<dim>
+    {
+    public:
+        virtual void
+        vector_value(const Point<dim> &p, Vector<double> &values) const override
+        {
+            // p=sp.sin(t) * sp.cos(sp.pi * x) * sp.sin(sp.pi * y)
+
+            values[0] = sin(this->get_time()) * cos(M_PI * p[0]) * sin(M_PI * p[1]);
+
+            for (unsigned int i = 1; i < dim + 1; ++i)
                 values[i] = 0.0;
         }
 
@@ -61,202 +118,405 @@ public:
         value(const Point<dim> &p, const unsigned int component = 0) const override
         {
             if (component == 0)
-                if constexpr (dim == 2)
-                    return 4.0 * uM * p[1] * (H - p[1]) / (H * H);
-                else
-                    return 16.0 * uM * p[1] * (H - p[1]) * p[2] * (H - p[2]) / (H * H * H * H);
+                return sin(this->get_time()) * cos(M_PI * p[0]) * sin(M_PI * p[1]);
             else
                 return 0.0;
         }
-
-        double get_u_max() const
-        {
-            return uM;
-        }
-
-    protected:
-        double uM;
-        double H;
     };
 
-    // ============================== PUBLIC FUNCTIONS ===============================
-    // ............................................................
-    // Constructor
-    // ............................................................
-    // Parameters:
-    //   mesh_file_name_ - name of the mesh file.
-    //   degree_velocity_ - velocity polynomial degree.
-    //   degree_pressure_ - pressure polynomial degree.
-    //   T_ - final time.
-    //   deltat_ - time step size.
-    //   reynolds_number_ - Reynolds number.
-    // ............................................................
-
-UncoupledNavierStokes(
-        const std::string &mesh_file_name_,
-        const unsigned int &degree_velocity_,
-        const unsigned int &degree_pressure_,
-        const double &T_,
-        const double &deltat_,
-        const double &reynolds_number_)
-        : reynolds_number(reynolds_number_),
-        T(T_),
-        deltat(deltat_),
-        mpi_size(Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD)),
-        mpi_rank(Utilities::MPI::this_mpi_process(MPI_COMM_WORLD)),
-        pcout(std::cout, mpi_rank == 0),
-        mesh(MPI_COMM_WORLD),
-        mesh_file_name(mesh_file_name_),
-        triangulation(),
-        fe_velocity(FE_SimplexP<dim>(2), dim),
-        dof_handler_velocity(triangulation),
-        fe_pressure(1),
-        dof_handler_pressure(triangulation),
-        degree_velocity(degree_velocity_),
-        degree_pressure(degree_pressure_),
-        inlet_velocity(H),
-        computing_timer(MPI_COMM_WORLD, pcout,
-                        TimerOutput::summary,
-                        TimerOutput::wall_times)
+    class EthierSteinmanVelocity : public Function<dim>
     {
-        this->nu = (2. / 3.) * inlet_velocity.get_u_max() * cylinder_radius / reynolds_number;
-    }
+    public:
+        EthierSteinmanVelocity(double nu_)
+            : Function<dim>(dim), nu(nu_)
+        {
+        }
 
-    auto run() -> void;
+        virtual void
+        vector_value(const Point<dim> &p, Vector<double> &values) const override
+        {
+            double t = this->get_time();
+            double x1 = p[0];
+            double x2 = p[1];
+            double x3 = p[2];
 
-    // ============================== PRIVATE FUNCTIONS ==============================
+            double factor = -a * std::exp(-nu * b * b * t);
+
+            values[0] = factor * (std::exp(a * x1) * std::sin(a * x2 + b * x3) + std::exp(a * x3) * std::cos(a * x1 + b * x2));
+            values[1] = factor * (std::exp(a * x2) * std::sin(a * x3 + b * x1) + std::exp(a * x1) * std::cos(a * x2 + b * x3));
+            values[2] = factor * (std::exp(a * x3) * std::sin(a * x1 + b * x2) + std::exp(a * x2) * std::cos(a * x3 + b * x1));
+        }
+
+        virtual double
+        value(const Point<dim> &p, const unsigned int component = 0) const override
+        {
+            double t = this->get_time();
+            double x1 = p[0];
+            double x2 = p[1];
+            double x3 = p[2];
+
+            double factor = -a * std::exp(-nu * b * b * t);
+
+            if (component == 0)
+                return factor * (std::exp(a * x1) * std::sin(a * x2 + b * x3) + std::exp(a * x3) * std::cos(a * x1 + b * x2));
+            else if (component == 1)
+                return factor * (std::exp(a * x2) * std::sin(a * x3 + b * x1) + std::exp(a * x1) * std::cos(a * x2 + b * x3));
+            else
+                return factor * (std::exp(a * x3) * std::sin(a * x1 + b * x2) + std::exp(a * x2) * std::cos(a * x3 + b * x1));
+        }
+
+        virtual Tensor<1, dim>
+        gradient(
+            const Point<dim> &p, const unsigned int component) const
+        {
+            Tensor<1, dim> result;
+
+            for (unsigned int i = 0; i < dim; i++)
+            {
+                result[i] = -a * std::exp(-nu * b * b * this->get_time());
+            }
+
+            if (component == 0)
+            {
+                result[0] *= (a * std::exp(a * p[0]) * std::sin(a * p[1] + b * p[2]) -
+                              a * std::exp(a * p[2]) * std::sin(a * p[0] + b * p[1]));
+                result[1] *= (a * std::exp(a * p[0]) * std::cos(a * p[1] + b * p[2]) -
+                              b * std::exp(a * p[2]) * std::sin(a * p[0] + b * p[1]));
+                result[2] *= (b * std::exp(a * p[0]) * std::cos(a * p[1] + b * p[2]) +
+                              a * std::exp(a * p[2]) * std::cos(a * p[0] + b * p[1]));
+            }
+            else if (component == 1)
+            {
+                result[0] *= (b * std::exp(a * p[1]) * std::cos(a * p[2] + b * p[0]) +
+                              a * std::exp(a * p[0]) * std::cos(a * p[1] + b * p[2]));
+                result[1] *= (a * std::exp(a * p[1]) * std::sin(a * p[2] + b * p[0]) -
+                              a * std::exp(a * p[0]) * std::sin(a * p[1] + b * p[2]));
+                result[2] *= (a * std::exp(a * p[1]) * std::cos(a * p[2] + b * p[0]) -
+                              b * std::exp(a * p[0]) * std::sin(a * p[1] + b * p[2]));
+            }
+            else if (component == 2)
+            {
+                result[0] *= (a * std::exp(a * p[2]) * std::cos(a * p[0] + b * p[1]) -
+                              b * std::exp(a * p[1]) * std::sin(a * p[2] + b * p[0]));
+                result[1] *= (b * std::exp(a * p[2]) * std::cos(a * p[0] + b * p[1]) +
+                              a * std::exp(a * p[1]) * std::cos(a * p[2] + b * p[0]));
+                result[2] *= (a * std::exp(a * p[2]) * std::sin(a * p[0] + b * p[1]) -
+                              a * std::exp(a * p[1]) * std::sin(a * p[2] + b * p[0]));
+            }
+            else
+            {
+                for (unsigned int i = 0; i < dim; i++)
+                {
+                    result[i] = 0.0;
+                }
+            }
+
+            return result;
+        }
+
+        virtual void vector_gradient(
+            const Point<dim> &p, std::vector<Tensor<1, dim>> &values) const
+        {
+            for (unsigned int i = 0; i < dim; i++)
+            {
+                values[i] = gradient(p, i);
+            }
+        }
+
+    private:
+        const double a = M_PI / 4.;
+        const double b = M_PI / 2.;
+        const double nu;
+    };
+
+    class EthierSteinmanPressure : public Function<dim>
+    {
+    public:
+        EthierSteinmanPressure(double nu_)
+            : Function<dim>(1), nu(nu_)
+        {
+        }
+
+        virtual double
+        value(const Point<dim> &p, const unsigned int /*component*/ = 0) const override
+        {
+            double t = this->get_time();
+            return -a * a / 2.0 * std::exp(-2 * nu * b * b * t) *
+                   (2.0 * std::sin(a * p[0] + b * p[1]) * std::cos(a * p[2] + b * p[0]) *
+                        std::exp(a * (p[1] + p[2])) +
+                    2.0 * std::sin(a * p[1] + b * p[2]) * std::cos(a * p[0] + b * p[1]) *
+                        std::exp(a * (p[0] + p[2])) +
+                    2.0 * std::sin(a * p[2] + b * p[0]) * std::cos(a * p[1] + b * p[2]) *
+                        std::exp(a * (p[0] + p[1])) +
+                    std::exp(2.0 * a * p[0]) + std::exp(2.0 * a * p[1]) +
+                    std::exp(2.0 * a * p[2]));
+        }
+
+        virtual void
+        vector_value(const Point<dim> &p, Vector<double> &values) const override
+        {
+            double t = this->get_time();
+            values[0] = -a * a / 2.0 * std::exp(-2 * nu * b * b * t) *
+                        (2.0 * std::sin(a * p[0] + b * p[1]) * std::cos(a * p[2] + b * p[0]) *
+                             std::exp(a * (p[1] + p[2])) +
+                         2.0 * std::sin(a * p[1] + b * p[2]) * std::cos(a * p[0] + b * p[1]) *
+                             std::exp(a * (p[0] + p[2])) +
+                         2.0 * std::sin(a * p[2] + b * p[0]) * std::cos(a * p[1] + b * p[2]) *
+                             std::exp(a * (p[0] + p[1])) +
+                         std::exp(2.0 * a * p[0]) + std::exp(2.0 * a * p[1]) +
+                         std::exp(2.0 * a * p[2]));
+        }
+
+    private:
+        const double a = M_PI / 4.;
+        const double b = M_PI / 2.;
+        const double nu;
+    };
+
+    class EthierSteinmanNeumann : public Function<dim>
+    {
+    public:
+        EthierSteinmanNeumann(double nu_)
+            : Function<dim>(dim + 1), nu(nu_), exact_velocity(nu_), exact_pressure(nu_)
+        {
+        }
+
+        virtual double
+        value(const Point<dim> &p, const unsigned int component) const
+        {
+            exact_pressure.set_time(this->get_time());
+            exact_velocity.set_time(this->get_time());
+
+            if (component == 0 || component == 2)
+            {
+                Tensor<1, dim> velocity_gradient =
+                    exact_velocity.gradient(p, component);
+                return -nu * velocity_gradient[1];
+            }
+            else if (component == 1)
+            {
+                Tensor<1, dim> velocity_gradient =
+                    exact_velocity.gradient(p, component);
+                return -nu * velocity_gradient[1] + exact_pressure.value(p);
+            }
+            else
+            {
+                return 0.0;
+            }
+        }
+
+        virtual void
+        vector_value(const Point<dim> &p, Vector<double> &values) const override
+        {
+            for (unsigned int i = 0; i < dim + 1; i++)
+            {
+                values[i] = value(p, i);
+            }
+        }
+
+    private:
+
+        const double nu;
+        mutable EthierSteinmanVelocity exact_velocity;
+        mutable EthierSteinmanPressure exact_pressure;
+    };
+
+    UncoupledNavierStokes(const std::string &mesh_file_name_,
+                           const unsigned int &degree_velocity_,
+                           const unsigned int &degree_pressure_,
+                           const double &T_,
+                           const double &deltat_);
+
+    void run();
+
+    double get_linfinity_H1_error_velocity();
+
+    double get_linfinity_L2_error_velocity();
+
+    double get_linfinity_L2_error_pressure();
+
+    double get_Linfinity_error_pressure();
+
+    double get_L2_error_velocity();
+
+    double get_H1_error_velocity();
+
 private:
 
-    auto setup() -> void; // Setup the problem by initializing the mesh, DoF handler, and finite element spaces.
+    void setup();
 
-    auto assemble_system_velocity() -> void; // Assemble the system matrix and right-hand side for the velocity problem.
+    void assemble_system_velocity();
 
-    auto solve_velocity_system() -> void; // Solve the velocity system.
+    void solve_velocity_system();
 
-    auto assemble_system_pressure() -> void; // Assemble the system matrix and right-hand side for the pressure problem.
+    void assemble_system_pressure();
 
-    auto solve_pressure_system() -> void; // Solve the pressure system.
+    void solve_pressure_system();
 
-    auto update_velocity() -> void; // Assemble the system matrix and right-hand side for the velocity update problem.
+    void update_velocity();
 
-    auto solve_update_velocity_system() -> void; // Solve the velocity update system.
+    void solve_update_velocity_system();
 
-    auto pressure_update(bool rotational) -> void; // Update the pressure field. If therotational flag is true, the rotational term is included.
+    void output_results();
 
-    auto output_results() -> void; // Save the output of the computation in a pvtk format.
+    void update_buondary_conditions();
 
-    auto compute_lift_drag() -> void; // Compute lift and drag coefficients
+    std::string get_output_directory();
 
-    auto get_output_directory() -> std::string; // Defines the path of the directory where the outputs will be stored
+    void pressure_update(bool rotational);
 
-    // ================================ PRIVATE VARIABLES ===============================
+    double compute_error_velocity(const VectorTools::NormType &norm_type);
 
-    // ================================
-    // Geometrical and Physical Parameters
+    double compute_error_pressure(const VectorTools::NormType &norm_type);
 
-    const double H = 0.41;                                      // Height of the channel
-    const double cylinder_radius = 0.1;                         // Cylinder radius of the obstacle
-    const double rho = 1.0;                                     // Fluid density
-    const double reynolds_number;                               // Reynolds number, governing flow characteristics
-    double nu;                                                  // Kinematic viscosity of the fluid
+    void compute_errors();
 
-    // ================================
-    // Time and Simulation Control
+    // Velocity FE: Q2 vector
+    FESystem<dim> fe_velocity;
 
-    const double T;                                             // Final simulation time
-    double deltat;                                              // Time step size
-    double time;                                                // Current simulation time
-    unsigned int time_step = 0;                                 // Time step counter
-    unsigned int timestep_number;                               // Number of time steps performed
+    Triangulation<dim> triangulation;
 
-    // ================================
-    // MPI and Parallelization
+    DoFHandler<dim> dof_handler_velocity;
+    AffineConstraints<double> constraints_velocity;
 
-    const unsigned int mpi_size;                                // Number of MPI processes
-    const unsigned int mpi_rank;                                // Rank of the current MPI process
-    ConditionalOStream pcout;                                   // Parallel output stream for controlled logging
-    parallel::fullydistributed::Triangulation<dim> mesh;        // Fully distributed parallel mesh
+    // Pressure FE: Q1 scalar
+    FE_SimplexP<dim> fe_pressure;
+    DoFHandler<dim> dof_handler_pressure;
 
-    // ================================
-    // Mesh and Finite Element Setup
+    AffineConstraints<double> constraints_pressure;
 
-    const std::string mesh_file_name;                           // Name of the mesh file
-    Triangulation<dim> triangulation;                           // Main triangulation object for the domain
+    // Mesh file name.
+    const std::string mesh_file_name;
 
-    FESystem<dim> fe_velocity;                                  // Velocity finite element: Uses a Q2 (quadratic) vector-valued basis
-    DoFHandler<dim> dof_handler_velocity;                       // DoF handler for velocity field
+    // Polynomial degree Velocity.
+    const unsigned int degree_velocity;
 
-    FE_SimplexP<dim> fe_pressure;                               // Pressure finite element: Uses a Q1 (linear) scalar-valued basis
-    DoFHandler<dim> dof_handler_pressure;                       // DoF handler for pressure field
+    // Polynomial degree Pressure.
+    const unsigned int degree_pressure;
 
-    const unsigned int degree_velocity;                         // Polynomial degree for velocity field
-    const unsigned int degree_pressure;                         // Polynomial degree for pressure field
+    // Final time.
+    const double T;
+    unsigned int timestep_number;
+    double deltat;
+    double time = 0;
 
-    // ================================
-    // Boundary and Initial Conditions
+    // Number of MPI processes.
+    const unsigned int mpi_size;
 
-    Functions::ZeroFunction<dim> forcing_term;                  // External forcing term (zero in this case)
-    Functions::ZeroFunction<dim> neumann_function;              // Neumann boundary condition function
-    Functions::ZeroFunction<dim> initial_condition;             // Initial velocity and pressure condition
-    InletVelocity inlet_velocity;                               // Prescribed velocity profile at the inlet
+    // This MPI process.
+    const unsigned int mpi_rank;
 
-    // Note that forcing_term and neumann_function are not applied in this case 
-    // To see an example of implementation please check the Numerical-Test Branch
+    ConditionalOStream pcout;
 
-    // ================================
-    // Timing and Computational Monitoring
+    // Owned & relevant dofs
+    IndexSet locally_owned_velocity;
+    IndexSet locally_relevant_velocity;
+    IndexSet locally_owned_pressure;
+    IndexSet locally_relevant_pressure;
 
-    TimerOutput computing_timer;                                // Timer for performance monitoring
+    // System matrices
+    TrilinosWrappers::SparseMatrix velocity_matrix;
+    TrilinosWrappers::SparseMatrix pressure_matrix;
+    TrilinosWrappers::SparseMatrix velocity_update_matrix;
 
-    // ================================
-    // Constraints and Degrees of Freedom
+    // System vectors
+    TrilinosWrappers::MPI::Vector old_velocity;
+    TrilinosWrappers::MPI::Vector old_old_velocity;
+    TrilinosWrappers::MPI::Vector u_star;
+    TrilinosWrappers::MPI::Vector velocity_solution;
+    TrilinosWrappers::MPI::Vector update_velocity_solution;
+    TrilinosWrappers::MPI::Vector velocity_system_rhs;
+    TrilinosWrappers::MPI::Vector velocity_update_rhs;
 
-    AffineConstraints<double> constraints_velocity;             // Affine constraints for velocity field
-    AffineConstraints<double> constraints_pressure;             // Affine constraints for pressure field
+    TrilinosWrappers::MPI::Vector old_pressure;
+    TrilinosWrappers::MPI::Vector deltap;
+    TrilinosWrappers::MPI::Vector pressure_solution;
+    TrilinosWrappers::MPI::Vector pressure_system_rhs;
 
-    IndexSet locally_owned_velocity;                            // Velocity DoFs owned by the current process
-    IndexSet locally_relevant_velocity;                         // Velocity DoFs relevant for the current process
-    IndexSet locally_owned_pressure;                            // Pressure DoFs owned by the current process
-    IndexSet locally_relevant_pressure;                         // Pressure DoFs relevant for the current process
+    // Viscosity
+    double nu = 1.;
 
-    // ================================
-    // System Matrices
+    double l2_H1_norm = 0.0; 
 
-    TrilinosWrappers::SparseMatrix velocity_matrix;             // System matrix for velocity field
-    TrilinosWrappers::SparseMatrix pressure_matrix;             // System matrix for pressure field
-    TrilinosWrappers::SparseMatrix velocity_update_matrix;      // Matrix used for velocity updates
+    unsigned int time_step = 0;
 
-    // ================================
-    // System Vectors
+    bool rotational = true;
 
-    TrilinosWrappers::MPI::Vector old_velocity;                 // Velocity field at previous time step
-    TrilinosWrappers::MPI::Vector old_old_velocity;             // Velocity field two time steps ago
-    TrilinosWrappers::MPI::Vector u_star;                       // Intermediate velocity field in fractional step method
-    TrilinosWrappers::MPI::Vector u_star_divergence;            // Divergence of u_star field
-    TrilinosWrappers::MPI::Vector velocity_solution;            // Solution vector for velocity field
-    TrilinosWrappers::MPI::Vector update_velocity_solution;     // Update for velocity field
-    TrilinosWrappers::MPI::Vector velocity_system_rhs;          // Right-hand side of the velocity system
-    TrilinosWrappers::MPI::Vector velocity_update_rhs;          // Right-hand side of the velocity update system
+    parallel::fullydistributed::Triangulation<dim> mesh;
 
-    TrilinosWrappers::MPI::Vector old_pressure;                 // Pressure field at previous time step
-    TrilinosWrappers::MPI::Vector deltap;                       // Change in pressure between iterations
-    TrilinosWrappers::MPI::Vector pressure_solution;            // Solution vector for pressure field
-    TrilinosWrappers::MPI::Vector pressure_system_rhs;          // Right-hand side of the pressure system
+    TimerOutput computing_timer;
 
-    // ================================
-    // Post-Processing Data
+    EthierSteinmanVelocity exact_velocity3D;
 
-    bool rotational = false;                                    // Flag to indicate whether rotation effects are included
+    EthierSteinmanPressure exact_pressure3D;
 
-    std::vector<double> vec_drag;                               // History of drag force values over time
-    std::vector<double> vec_lift;                               // History of lift force values over time
-    std::vector<double> vec_drag_coeff;                         // History of drag coefficient values
-    std::vector<double> vec_lift_coeff;                         // History of lift coefficient values
+    EthierSteinmanNeumann neumann_function3D;
 
-    double lift;                                                // Current lift force value
-    double drag;                                                // Current drag force value
+    ExactVelocity2D exact_velocity2D;
 
+    ExactPressure2D exact_pressure2D;
+
+    ForcingTerm2D forcing_term2D;
+
+    // Height of the channel.
+    const double H = 0.41;
+
+    std::vector<double> vec_drag;
+
+    std::vector<double> vec_lift;
+
+    std::vector<double> vec_drag_coeff;
+
+    std::vector<double> vec_lift_coeff;
+
+    double lift;
+
+    double drag;
+
+    const double rho = 1.0;
+
+    // errors 
+
+    double linfinity_H1_error_velocity = 0.0;
+
+    double linfinity_L2_error_velocity = 0.0;
+
+    double linfinity_L2_error_pressure = 0.0;
+
+    double Linfinity_error_pressure = 0.0;
+
+    double L2_error_velocity = 0.0;
+
+    double H1_error_velocity = 0.0;
 };
 
-#endif // UNCOUPLED_NAVIER_STOKES_HPP
+template <unsigned int dim>
+UncoupledNavierStokes<dim>::UncoupledNavierStokes(
+    const std::string &mesh_file_name_,
+    const unsigned int &degree_velocity_,
+    const unsigned int &degree_pressure_,
+    const double &T_,
+    const double &deltat_)
+    : fe_velocity(FE_SimplexP<dim>(2), dim),
+      dof_handler_velocity(triangulation),
+      fe_pressure(1),
+      dof_handler_pressure(triangulation),
+      mesh_file_name(mesh_file_name_),
+      degree_velocity(degree_velocity_),
+      degree_pressure(degree_pressure_),
+      T(T_),
+      deltat(deltat_),
+      mpi_size(Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD)),
+      mpi_rank(Utilities::MPI::this_mpi_process(MPI_COMM_WORLD)),
+      pcout(std::cout, mpi_rank == 0),
+      mesh(MPI_COMM_WORLD),
+      computing_timer(MPI_COMM_WORLD, pcout,
+                      TimerOutput::summary,
+                      TimerOutput::wall_times),
+      exact_velocity3D(nu),
+      exact_pressure3D(nu),
+      neumann_function3D(nu)
+{
+}
 
+#endif

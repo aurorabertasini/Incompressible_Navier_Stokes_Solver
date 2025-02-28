@@ -4,247 +4,631 @@
 #include "includes_file.hpp"
 using namespace dealii;
 
-// ==================================================================
-// Class: MonolithicNavierStokes
-//
-// Description:
-//   This class solves the incompressible Navier-Stokes equations
-//   using a monolithic approach. The class is templated on the
-//   dimensionality of the problem in order to handle 2D and 3D
-//   problems.
-//
-//  =================================================================
-
 template <unsigned int dim>
 class MonolithicNavierStokes
 {
 public:
-    // ---------------------------------------------------------------
-    // Class: InletVelocity
-    //
-    // Description:
-    //   This class defines an inlet velocity function.
-    //   It sets the maximum velocity value (uM) based on the
-    //   dimensionality of the problem: 1.5 for 2D problems, 2.25 for 3D problems.
-    //
-    // Parameters:
-    //   H - characteristic length of the domain.
-    //   uM - maximum velocity value.
-    // ---------------------------------------------------------------
-    class InletVelocity : public Function<dim>
+    class ForcingTerm2D : public Function<dim>
     {
     public:
-        InletVelocity(const double H_)
-            : Function<dim>(dim), H(H_)
+        virtual void
+        vector_value(const Point<dim> &p,
+                     Vector<double> &values) const override
         {
-            static_assert(dim == 2 || dim == 3,
-                          "Dimensions other than 2 or 3 are not supported");
+            double x = p[0];
+            double y = p[1];
+            double t = this->get_time();
+            values[0] = M_PI * (4.0 * M_PI * M_PI * sin(t) * sin(t) * sin(M_PI * x) * sin(M_PI * x) 
+                                    * sin(M_PI * x) * sin(M_PI * y) * cos(M_PI * x) + 16.0 * M_PI 
+                                    * M_PI * sin(t) * sin(M_PI * x) * sin(M_PI * x) * cos(M_PI * y) 
+                                    - sin(t) * sin(M_PI * x) - 4.0 * M_PI * M_PI * sin(t) * cos(M_PI * y) 
+                                    + 2.0 * sin(M_PI * x) * sin(M_PI * x) * cos(t) * cos(M_PI * y)) * sin(M_PI * y);
 
-            if constexpr (dim == 2)
-                this->uM = 1.5;
-            else if constexpr (dim == 3)
-                this->uM = 2.25;
+            values[1] = M_PI * (4.0 * M_PI * M_PI * sin(t) * sin(t) * sin(M_PI * x) * sin(M_PI * x) 
+                                    * sin(M_PI * y) * sin(M_PI * y) * sin(M_PI * y) * cos(M_PI * y) 
+                                    - 16.0 * M_PI * M_PI * sin(t) * sin(M_PI * x) * sin(M_PI * y) 
+                                    * sin(M_PI * y) * cos(M_PI * x) + 4.0 * M_PI * M_PI * sin(t) 
+                                    * sin(M_PI * x) * cos(M_PI * x) + sin(t) * cos(M_PI * x) * cos(M_PI * y) 
+                                    - 2.0 * sin(M_PI * x) * sin(M_PI * y) * sin(M_PI * y) * cos(t) * cos(M_PI * x));
+        }
+
+        virtual double
+        value(const Point<dim> &p,
+              const unsigned int component = 0) const override
+        {
+            double x = p[0];
+            double y = p[1];
+            double t = this->get_time();
+            if (component == 0)
+                return M_PI * (4.0 * M_PI * M_PI * sin(t) * sin(t) * sin(M_PI * x) * sin(M_PI * x) 
+                                   * sin(M_PI * x) * sin(M_PI * y) * cos(M_PI * x) + 16.0 * M_PI 
+                                   * M_PI * sin(t) * sin(M_PI * x) * sin(M_PI * x) * cos(M_PI * y) 
+                                   - sin(t) * sin(M_PI * x) - 4.0 * M_PI * M_PI * sin(t) * cos(M_PI * y) 
+                                   + 2.0 * sin(M_PI * x) * sin(M_PI * x) * cos(t) * cos(M_PI * y)) * sin(M_PI * y);
+            else if (component == 1)
+                return M_PI * (4.0 * M_PI * M_PI * sin(t) * sin(t) * sin(M_PI * x) * sin(M_PI * x) 
+                                   * sin(M_PI * y) * sin(M_PI * y) * sin(M_PI * y) * cos(M_PI * y) 
+                                   - 16.0 * M_PI * M_PI * sin(t) * sin(M_PI * x) * sin(M_PI * y) 
+                                   * sin(M_PI * y) * cos(M_PI * x) + 4.0 * M_PI * M_PI * sin(t) * sin(M_PI * x) 
+                                   * cos(M_PI * x) + sin(t) * cos(M_PI * x) * cos(M_PI * y) - 2.0 * sin(M_PI * x) 
+                                   * sin(M_PI * y) * sin(M_PI * y) * cos(t) * cos(M_PI * x));
+            else
+                return 0.0;
+        }
+
+    protected:
+    };
+
+    // Class for the exact solution, containing both velocity and pressure.
+    class ExactSolution2D : public Function<dim>
+    {
+    public:
+        // Constructor.
+        ExactSolution2D()
+            : Function<dim>(dim + 1),
+              exact_velocity(),
+              exact_pressure() {}
+
+        // When defining vector-valued functions, we need to define the value
+        // function, which returns the value of the function at a given point and
+        // component...
+        virtual double value(const Point<dim> &p,
+                             const unsigned int component) const override
+        {
+            if (component < dim)
+            {
+                exact_velocity.set_time(this->get_time());
+                return exact_velocity.value(p, component);
+            }
+            else if (component == dim)
+            {
+                exact_pressure.set_time(this->get_time());
+                return exact_pressure.value(p);
+            }
+            else
+            {
+                return 0.0;
+            }
+        }
+
+        // ... and the vector_value function, which returns the value of the
+        // function at a given point for all components.
+        virtual void vector_value(const Point<dim> &p,
+                                  Vector<double> &values) const override
+        {
+            for (unsigned int i = 0; i < dim + 1; i++)
+            {
+                values[i] = value(p, i);
+            }
+        }
+
+        // This is a function object, which defines the exact velocity. Since the
+        // problem's exact solution is known, we can define it as a function object
+        // and use it to compute the error of our numerical solution. To be able to
+        // compute the H1 norm of the error, the exact gradient is computed as well.
+        // This function returns 4 values, despite the fact that the last one is
+        // empty, for compatibility reasons.
+        class ExactVelocity2D : public Function<dim>
+        {
+        public:
+            virtual void
+            vector_value(const Point<dim> &p, Vector<double> &values) const override
+            {
+                double t = this->get_time();
+                values[0] = M_PI * sin(t) * sin(2.0 * M_PI * p[1]) * sin(M_PI * p[0]) * sin(M_PI * p[0]);
+                values[1] = -M_PI * sin(t) * sin(2.0 * M_PI * p[0]) * sin(M_PI * p[1]) * sin(M_PI * p[1]);
+            }
+
+            virtual double
+            value(const Point<dim> &p, const unsigned int component = 0) const override
+            {
+                double t = this->get_time();
+                if (component == 0)
+                    return M_PI * sin(t) * sin(2.0 * M_PI * p[1]) * sin(M_PI * p[0]) * sin(M_PI * p[0]);
+
+                else if (component == 1)
+                    return -M_PI * sin(t) * sin(2.0 * M_PI * p[0]) * sin(M_PI * p[1]) * sin(M_PI * p[1]);
+                else
+                    return 0.0;
+            }
+
+            virtual Tensor<1, dim>
+            gradient(
+                const Point<dim> &p, const unsigned int component) const
+            {
+                Tensor<1, dim> result;
+                double t = this->get_time();
+                double x = p[0];
+                double y = p[1];
+
+                if (component == 0)
+                {
+                    result[0] = 2.0 * M_PI * M_PI * sin(t) * sin(2.0 * M_PI * y) * sin(M_PI * x) * cos(M_PI * x);
+                    result[1] = 2.0 * M_PI * M_PI * sin(t) * cos(2.0 * M_PI * y) * sin(M_PI * x) * sin(M_PI * x);
+                }
+                else if (component == 1)
+                {
+                    result[0] = -2.0 * M_PI * M_PI * sin(t) * cos(2.0 * M_PI * x) * sin(M_PI * y) * sin(M_PI * y);
+                    result[1] = -2.0 * M_PI * M_PI * sin(t) * sin(2.0 * M_PI * x) * sin(M_PI * y) * cos(M_PI * y);
+                }
+                return result;
+            }
+            virtual void vector_gradient(
+                const Point<dim> &p, std::vector<Tensor<1, dim>> &values) const
+            {
+                for (unsigned int i = 0; i < dim; i++)
+                {
+                    values[i] = gradient(p, i);
+                }
+            }
+        };
+
+        class ExactPressure2D : public Function<dim>
+        {
+        public:
+            virtual void
+            vector_value(const Point<dim> &p, Vector<double> &values) const override
+            {
+                // p=sp.sin(t) * sp.cos(sp.pi * x) * sp.sin(sp.pi * y)
+
+                values[0] = sin(this->get_time()) * cos(M_PI * p[0]) * sin(M_PI * p[1]);
+
+                for (unsigned int i = 1; i < dim + 1; ++i)
+                    values[i] = 0.0;
+            }
+
+            virtual double
+            value(const Point<dim> &p, const unsigned int component = 0) const override
+            {
+                if (component == 0)
+                    return sin(this->get_time()) * cos(M_PI * p[0]) * sin(M_PI * p[1]);
+                else
+                    return 0.0;
+            }
+        };
+
+    private:
+    public:
+        mutable ExactVelocity2D exact_velocity;
+
+        mutable ExactPressure2D exact_pressure;
+    };
+
+    class EthierSteinman : public Function<dim>
+    {
+    public:
+        EthierSteinman(double nu_) : Function<dim>(dim + 1), exact_velocity(nu_), exact_pressure(nu_), neumann_condition(nu_)
+        {
+        }
+
+        virtual void 
+        set_time(const double time) override
+        {
+            Function<dim>::set_time(time);
+            exact_velocity.set_time(time);
+            exact_pressure.set_time(time);
+            neumann_condition.set_time(time);
+        }
+
+        virtual double
+        value(const Point<dim> &p, const unsigned int component) const
+        {
+            if (component < dim)
+            {
+                exact_velocity.set_time(this->get_time());
+                return exact_velocity.value(p, component);
+            }
+            else if (component == dim)
+            {
+                exact_pressure.set_time(this->get_time());
+                return exact_pressure.value(p);
+            }
+            else
+            {
+                return 0.0;
+            }
         }
 
         virtual void
         vector_value(const Point<dim> &p, Vector<double> &values) const override
         {
-            static_assert(dim == 2 || dim == 3,
-                          "Dimensions other than 2 or 3 are not supported");
-            if constexpr (dim == 2)
-                values[0] = 4.0 * uM * p[1] * (H - p[1]) / (H * H);
-            else if constexpr (dim == 3)
-                values[0] = 16.0 * uM * p[1] * (H - p[1]) * p[2] * (H - p[2]) / (H * H * H * H);
-        }
-
-        virtual double
-        value(const Point<dim> &p, const unsigned int component = 0) const override
-        {
-            if (component == 0)
+            for (unsigned int i = 0; i < dim + 1; i++)
             {
-                if constexpr (dim == 2)
-                    return 4.0 * uM * p[1] * (H - p[1]) / (H * H);
-                else if constexpr (dim == 3)
-                    return 16.0 * uM * p[1] * (H - p[1]) * p[2] * (H - p[2]) / (H * H * H * H);
+                values[i] = value(p, i);
             }
-            else
-                return 0.0;
         }
-
-        double get_u_max() const
+        class EthierSteinmanVelocity : public Function<dim>
         {
-            return uM;
-        }
+        public:
+            EthierSteinmanVelocity(double nu_)
+                : Function<dim>(dim), nu(nu_)
+            {
+            }
 
-    protected:
-        double uM;
-        const double H;
+            virtual void
+            vector_value(const Point<dim> &p, Vector<double> &values) const override
+            {
+                double t = this->get_time();
+                double x1 = p[0];
+                double x2 = p[1];
+                double x3 = p[2];
+
+                double factor = -a * std::exp(-nu * b * b * t);
+
+                values[0] = factor * (std::exp(a * x1) * std::sin(a * x2 + b * x3) + std::exp(a * x3) * std::cos(a * x1 + b * x2));
+                values[1] = factor * (std::exp(a * x2) * std::sin(a * x3 + b * x1) + std::exp(a * x1) * std::cos(a * x2 + b * x3));
+                values[2] = factor * (std::exp(a * x3) * std::sin(a * x1 + b * x2) + std::exp(a * x2) * std::cos(a * x3 + b * x1));
+                values[3] = 0.0;
+            }
+
+            virtual double
+            value(const Point<dim> &p, const unsigned int component = 0) const override
+            {
+                double t = this->get_time();
+                double x1 = p[0];
+                double x2 = p[1];
+                double x3 = p[2];
+
+                double factor = -a * std::exp(-nu * b * b * t);
+
+                if (component == 0)
+                    return factor * (std::exp(a * x1) * std::sin(a * x2 + b * x3) + std::exp(a * x3) * std::cos(a * x1 + b * x2));
+                else if (component == 1)
+                    return factor * (std::exp(a * x2) * std::sin(a * x3 + b * x1) + std::exp(a * x1) * std::cos(a * x2 + b * x3));
+                else if (component == 2)
+                    return factor * (std::exp(a * x3) * std::sin(a * x1 + b * x2) + std::exp(a * x2) * std::cos(a * x3 + b * x1));
+                else 
+                return 0.0;
+
+            }
+
+            virtual Tensor<1, dim>
+            gradient(
+                const Point<dim> &p, const unsigned int component) const
+            {
+                Tensor<1, dim> result;
+
+                for (unsigned int i = 0; i < dim; i++)
+                {
+                    result[i] = -a * std::exp(-nu * b * b * this->get_time());
+                }
+                if (component == 0)
+                {
+                    result[0] *= (a * std::exp(a * p[0]) * std::sin(a * p[1] + b * p[2]) -
+                                  a * std::exp(a * p[2]) * std::sin(a * p[0] + b * p[1]));
+                    result[1] *= (a * std::exp(a * p[0]) * std::cos(a * p[1] + b * p[2]) -
+                                  b * std::exp(a * p[2]) * std::sin(a * p[0] + b * p[1]));
+                    result[2] *= (b * std::exp(a * p[0]) * std::cos(a * p[1] + b * p[2]) +
+                                  a * std::exp(a * p[2]) * std::cos(a * p[0] + b * p[1]));
+                }
+                else if (component == 1)
+                {
+                    result[0] *= (b * std::exp(a * p[1]) * std::cos(a * p[2] + b * p[0]) +
+                                  a * std::exp(a * p[0]) * std::cos(a * p[1] + b * p[2]));
+                    result[1] *= (a * std::exp(a * p[1]) * std::sin(a * p[2] + b * p[0]) -
+                                  a * std::exp(a * p[0]) * std::sin(a * p[1] + b * p[2]));
+                    result[2] *= (a * std::exp(a * p[1]) * std::cos(a * p[2] + b * p[0]) -
+                                  b * std::exp(a * p[0]) * std::sin(a * p[1] + b * p[2]));
+                }
+                else if (component == 2)
+                {
+                    result[0] *= (a * std::exp(a * p[2]) * std::cos(a * p[0] + b * p[1]) -
+                                  b * std::exp(a * p[1]) * std::sin(a * p[2] + b * p[0]));
+                    result[1] *= (b * std::exp(a * p[2]) * std::cos(a * p[0] + b * p[1]) +
+                                  a * std::exp(a * p[1]) * std::cos(a * p[2] + b * p[0]));
+                    result[2] *= (a * std::exp(a * p[2]) * std::sin(a * p[0] + b * p[1]) -
+                                  a * std::exp(a * p[1]) * std::sin(a * p[2] + b * p[0]));
+                }
+                else
+                {
+                    for (unsigned int i = 0; i < dim; i++)
+                    {
+                        result[i] = 0.0;
+                    }
+                }
+
+                return result;
+            }
+
+            virtual void vector_gradient(
+                const Point<dim> &p, std::vector<Tensor<1, dim>> &values) const
+            {
+                for (unsigned int i = 0; i < dim + 1; i++)
+                {
+                    values[i] = gradient(p, i);
+                }
+            }
+
+        private:
+            static constexpr double a = M_PI / 4.;
+            static constexpr double b = M_PI / 2.;
+            const double nu;
+        };
+
+        class EthierSteinmanPressure : public Function<dim>
+        {
+        public:
+            EthierSteinmanPressure(double nu_)
+                : Function<dim>(1), nu(nu_)
+            {
+            }
+
+            virtual double
+            value(const Point<dim> &p, const unsigned int /*component*/ = 0) const override
+            {
+                double t = this->get_time();
+                return -a * a / 2.0 * std::exp(-2 * nu * b * b * t) *
+                       (2.0 * std::sin(a * p[0] + b * p[1]) * std::cos(a * p[2] + b * p[0]) *
+                            std::exp(a * (p[1] + p[2])) +
+                        2.0 * std::sin(a * p[1] + b * p[2]) * std::cos(a * p[0] + b * p[1]) *
+                            std::exp(a * (p[0] + p[2])) +
+                        2.0 * std::sin(a * p[2] + b * p[0]) * std::cos(a * p[1] + b * p[2]) *
+                            std::exp(a * (p[0] + p[1])) +
+                        std::exp(2.0 * a * p[0]) + std::exp(2.0 * a * p[1]) +
+                        std::exp(2.0 * a * p[2]));
+            }
+
+            virtual void
+            vector_value(const Point<dim> &p, Vector<double> &values) const override
+            {
+                double t = this->get_time();
+                values[0] = -a * a / 2.0 * std::exp(-2 * nu * b * b * t) *
+                            (2.0 * std::sin(a * p[0] + b * p[1]) * std::cos(a * p[2] + b * p[0]) *
+                                 std::exp(a * (p[1] + p[2])) +
+                             2.0 * std::sin(a * p[1] + b * p[2]) * std::cos(a * p[0] + b * p[1]) *
+                                 std::exp(a * (p[0] + p[2])) +
+                             2.0 * std::sin(a * p[2] + b * p[0]) * std::cos(a * p[1] + b * p[2]) *
+                                 std::exp(a * (p[0] + p[1])) +
+                             std::exp(2.0 * a * p[0]) + std::exp(2.0 * a * p[1]) +
+                             std::exp(2.0 * a * p[2]));
+            }
+
+        private:
+            static constexpr double a = M_PI / 4.;
+            static constexpr double b = M_PI / 2.;
+            const double nu;
+        };
+
+        class EthierSteinmanNeumann : public Function<dim>
+        {
+        public:
+            EthierSteinmanNeumann(double nu_)
+                : Function<dim>(dim + 1), nu(nu_), exact_velocity_n(nu_), exact_pressure_n(nu_)
+            {
+            }
+
+            virtual double
+            value(const Point<dim> &p, const unsigned int component) const
+            {
+                exact_pressure_n.set_time(this->get_time());
+                exact_velocity_n.set_time(this->get_time());
+
+                if (component == 0 || component == 2)
+                {
+                    Tensor<1, dim> velocity_gradient =
+                        exact_velocity_n.gradient(p, component);
+
+                    return -nu * velocity_gradient[1];
+                }
+                else if (component == 1)
+                {
+                    Tensor<1, dim> velocity_gradient =
+                        exact_velocity_n.gradient(p, component);
+                    return -nu * velocity_gradient[1] + exact_pressure_n.value(p);
+                }
+                else
+                {
+                    return 0.0;
+                }
+            }
+
+            virtual void
+            vector_value(const Point<dim> &p, Vector<double> &values) const override
+            {
+                for (unsigned int i = 0; i < dim; i++)
+                {
+                    values[i] = value(p, i);
+                }
+                values[dim] = 0.0;
+            }
+
+        private:
+
+            const double nu;
+            mutable EthierSteinmanVelocity exact_velocity_n;
+            mutable EthierSteinmanPressure exact_pressure_n;
+            
+        };
+
+        mutable EthierSteinmanVelocity exact_velocity;
+        mutable EthierSteinmanPressure exact_pressure;
+        mutable EthierSteinmanNeumann neumann_condition;
     };
 
-    // ============================== PUBLIC FUNCTIONS ===============================
-
-    // ............................................................
-	// Constructor 
-	// ............................................................
-	// Parameters:
-	//   mesh_file_name_ - name of the mesh file.
-    //   degree_velocity_ - polynomial degree for velocity.
-    //   degree_pressure_ - polynomial degree for pressure.
-    //   T_ - final time.
-    //   deltat_ - time step.
-    //   re_ - Reynolds number.
-    // ............................................................
-
+    // parameter as constructor arguments.
     MonolithicNavierStokes(
         const std::string &mesh_file_name_,
         const unsigned int &degree_velocity_,
         const unsigned int &degree_pressure_,
         const double &T_,
-        const double &deltat_,
-        const double &re_)
-        : mpi_size(Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD))
-        , mpi_rank(Utilities::MPI::this_mpi_process(MPI_COMM_WORLD))
-        , pcout(std::cout, mpi_rank == 0)
-        , mesh_file_name(mesh_file_name_)
-        , mesh(MPI_COMM_WORLD)
-        , reynolds_number(re_)
-        , T(T_)
-        , deltat(deltat_)
-        , degree_velocity(degree_velocity_)
-        , degree_pressure(degree_pressure_)
-        , inlet_velocity(H)
-        , velocity(0) 
-        , pressure(dim)
-    {
-        this->nu = (2. / 3.) * inlet_velocity.get_u_max() * cylinder_radius / reynolds_number;
-    }
+        const double &deltat_);
+    // Initialization.
+    void
+    setup();
 
-    auto run() -> void; // Function to run the full problem pipeline.
-    
+    // Solve the problem.
+    void
+    solve();
 
-    // ============================== PRIVATE FUNCTIONS ==============================
-private:
-    auto setup() -> void; // Setup the problem.
+    // Compute the error.
+    double
+    compute_error(const VectorTools::NormType &norm_type, bool velocity);
 
-    auto assemble_base_matrix() -> void; // Assemble the time independent part of the system matrix.
+    std::string
+    get_output_directory();
 
-    auto add_convective_term() -> void; // Assemble the convective part of the system matrix.
+    double get_l2_H1_error();
 
-    auto assemble_rhs() -> void; // Assemble the right-hand side of the problem.
+protected:
+    // Assemble the matrix without the non-linear term.
+    void
+    assemble_base_matrix();
 
-    auto solve_time_step() -> void; // Group all the instructions that need to be executed at each time step.
+    void
+    add_convective_term();
 
-    auto solve() -> void; // Solve the entire problem by looping over time steps.
+    // Assemble the right-hand side of the problem.
+    void
+    assemble_rhs(const double &time);
 
-    auto output(const unsigned int &time_step) -> void; // Save the output of the computation in a pvtk format.
+    // Solve the problem for one time step.
+    void
+    solve_time_step();
 
-    auto get_output_directory() const -> std::string; // Defines the path of the directory where the outputs will be stored
+    // Output.
+    void
+    output(const unsigned int &time_step);
+
+    void
+    compute_lift_drag();
+
+    void
+    update_buondary_conditions();
+
+    // Number of MPI processes.
+    const unsigned int mpi_size;
+
+    // This MPI process.
+    const unsigned int mpi_rank;
+
+    ConditionalOStream pcout; // Parallel output stream.
+
+    // Mesh file name.
+    const std::string mesh_file_name;
+
+    // Polynomial degree Velocity.
+    const unsigned int degree_velocity;
+
+    // Polynomial degree Pressure.
+    const unsigned int degree_pressure;
+
+    // Final time.
+    const double T;
+
+    // Time step.
+    const double deltat;
+
+    // extractors for velocity and pressure.
+    FEValuesExtractors::Vector velocity;
+
+    FEValuesExtractors::Scalar pressure;
+
+    // diffusion coefficient
+    const double nu = 1.0;
+
+    // Mesh.
+    parallel::fullydistributed::Triangulation<dim> mesh;
+
+    // ExactSolution2D exact_solution;
+
+    EthierSteinman exact_solution3D;
+
+    // forcing term 2D
+    ForcingTerm2D forcing_term;
+
+    // Affine constraints.
+    AffineConstraints<double> constraints;
+
+    // Current time.
+    double time;
+
+    double lift;
+
+    double drag;
+
+    double l2_H1_error = 0.0;
 
 
-    // ================================ PRIVATE VARIABLES ===============================
+    // Finite element space.
+    std::unique_ptr<FiniteElement<dim>> fe;
 
-    // ================================
-    // MPI and Parallelization
-    
-    const unsigned int mpi_size;                            // Number of MPI processes.
+    // Quadrature formula.
+    std::unique_ptr<Quadrature<dim>> quadrature;
 
-    const unsigned int mpi_rank;                            // This MPI process.
+    // Quadrature formula used on boundary lines.
+    std::unique_ptr<Quadrature<dim - 1>> quadrature_face;
 
-    ConditionalOStream pcout;                               // Parallel output stream.
+    // DoF handler.
+    DoFHandler<dim> dof_handler;
 
-    // ================================
-    // Mesh and Geometry Parameters
+    // DoFs owned by current process.
+    IndexSet locally_owned_dofs;
 
-    const std::string mesh_file_name;                       // Mesh file name.
+    std::vector<IndexSet> block_owned_dofs; 
 
-    static constexpr double H = 0.41;                       // Height of the channel.
+    // DoFs relevant to the current process (including ghost DoFs).
+    IndexSet locally_relevant_dofs;
 
-    static constexpr double cylinder_radius = 0.1;          // Cylinder radius.
+    std::vector<IndexSet> block_relevant_dofs; 
 
-    parallel::fullydistributed::Triangulation<dim> mesh;    // Mesh.
+    // Mass matrix M / deltat.
+    TrilinosWrappers::BlockSparseMatrix mass_matrix;
 
-    // ================================
-    // Physical Parameters
+    // Global matrix.
+    TrilinosWrappers::BlockSparseMatrix system_matrix;
 
-    const double reynolds_number;                           // Reynolds number.
+    // velocity mass
+    TrilinosWrappers::BlockSparseMatrix velocity_mass;
 
-    double nu;                                              // Diffusion coefficient.
+    // Non_linear term matrix.
+    TrilinosWrappers::BlockSparseMatrix convective_matrix;
 
-    // ================================
-    // Time and Simulation Control
+    // boolean value to choose to reconstruct all the system matrix ad each time step
+    bool RECONSTRUCT_SYSTEM_MATRIX = true;
 
-    const double T;                                         // Final time.
+    // Stiffness matrix K.
+    TrilinosWrappers::BlockSparseMatrix stiffness_matrix;
 
-    const double deltat;                                    // Time step.
+    TrilinosWrappers::BlockSparseMatrix pressure_mass;
 
-    double time;                                            // Current time.
+    TrilinosWrappers::BlockSparseMatrix rhs_matrix;
 
-    // ================================
-    // Finite Element and Discretization
+    // Right-hand side vector in the linear system.
+    TrilinosWrappers::MPI::BlockVector system_rhs;
 
-    const unsigned int degree_velocity;                     // Polynomial degree for velocity.
+    // System solution (without ghost elements).
+    TrilinosWrappers::MPI::BlockVector solution_owned;
 
-    const unsigned int degree_pressure;                     // Polynomial degree for pressure.
+    // System solution (including ghost elements).
+    TrilinosWrappers::MPI::BlockVector solution;
 
-    std::unique_ptr<FiniteElement<dim>> fe;                 // Finite element space.
 
-    std::unique_ptr<Quadrature<dim>> quadrature;            // Quadrature formula.
-
-    std::unique_ptr<Quadrature<dim - 1>> quadrature_face;   // Quadrature formula for boundary.
-
-    // ================================
-    // Degrees of Freedom (DoFs) and Constraints
-
-    DoFHandler<dim> dof_handler;                            // DoF handler.
-
-    IndexSet locally_owned_dofs;                            // DoFs owned by the current process.
-
-    std::vector<IndexSet> block_owned_dofs;                 // Block-wise partitioning of owned DoFs.
-
-    IndexSet locally_relevant_dofs;                         // DoFs relevant to the current process (including ghosts).
-
-    std::vector<IndexSet> block_relevant_dofs;              // Block-wise partitioning of relevant DoFs.
-
-    AffineConstraints<double> constraints;                  // Affine constraints.
-
-    // ================================
-    // Boundary and Initial Conditions
-
-    InletVelocity inlet_velocity;                           // Inlet velocity.
-
-    Functions::ZeroFunction<dim> forcing_term;              // Forcing term.
-
-    const bool zero_forcing = 0;                            // Indicator for zero forcing term.
-
-    Functions::ZeroFunction<dim> neumann_function;          // Neumann boundary condition.
-
-    const bool zero_neumann = 0;                            // Indicator for zero Neumann condition.
-
-    Functions::ZeroFunction<dim> initial_condition;         // Initial condition.
-
-    // ================================
-    // Extractors for Field Variables
-
-    FEValuesExtractors::Vector velocity;                    // Extractor for velocity.
-
-    FEValuesExtractors::Scalar pressure;                    // Extractor for pressure.
-
-    // ================================
-    // System Matrices and Vectors
-
-    TrilinosWrappers::BlockSparseMatrix system_matrix;      // Time-independent matrix.
-
-    TrilinosWrappers::BlockSparseMatrix velocity_mass;      // Velocity mass matrix.
-
-    TrilinosWrappers::BlockSparseMatrix pressure_mass;      // Pressure mass matrix.
-
-    TrilinosWrappers::BlockSparseMatrix lhs_matrix;         // Complete system matrix.
-
-    TrilinosWrappers::MPI::BlockVector system_rhs;          // Right-hand side vector.
-
-    TrilinosWrappers::MPI::BlockVector solution_owned;      // System solution without ghosts.
-
-    TrilinosWrappers::MPI::BlockVector solution;            // System solution with ghosts.
+    std::vector<double> vec_drag;
+    std::vector<double> vec_lift;
+    std::vector<double> vec_drag_coeff;
+    std::vector<double> vec_lift_coeff;
 };
+
+template <unsigned int dim>
+MonolithicNavierStokes<dim>::MonolithicNavierStokes(
+    const std::string &mesh_file_name_,
+    const unsigned int &degree_velocity_,
+    const unsigned int &degree_pressure_,
+    const double &T_,
+    const double &deltat_)
+    : mpi_size(Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD))
+    , mpi_rank(Utilities::MPI::this_mpi_process(MPI_COMM_WORLD))
+    , pcout(std::cout, mpi_rank == 0)
+    , mesh_file_name(mesh_file_name_)
+    , degree_velocity(degree_velocity_)
+    , degree_pressure(degree_pressure_)
+    , T(T_) 
+    , deltat(deltat_)
+    , velocity(0)
+    , pressure(dim)
+    , mesh(MPI_COMM_WORLD)
+    , exact_solution3D(nu)
+{
+}
 
 #endif
